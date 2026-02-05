@@ -1,243 +1,268 @@
-// --- CONFIGURACIÓN DE AUDIOS ---
-// Si tus archivos son .wav, cambia .mp3 por .wav abajo
-const bgMusic = new Audio('sound/Amor en 8 bits.mp3');
-bgMusic.loop = true; // Loop infinito
-bgMusic.volume = 0.5; // Volumen al 50% para no aturdir
-
-const correctFx = new Audio('sound/correct.mp3');
-const incorrectFx = new Audio('sound/incorrect.mp3');
-
 // --- CONFIGURACIÓN DE IMÁGENES ---
-const cardImages = [
+const puzzleImages = [
     'images/ft1.jpg',
     'images/ft2.jpg',
     'images/ft3.jpg',
-    'images/ft4.jpg',
-    'images/ft5.jpg',
-    'images/ft6.jpg'
+    'images/ft4.jpg'
 ];
 
-// --- VARIABLES DE ESTADO ---
-let gameGrid = [];
-let firstCard = null;
-let secondCard = null;
-let lockBoard = false;
+// --- CONFIGURACIÓN DE AUDIO ---
+// IMPORTANTE: Asegúrate de subir la carpeta "sound" a GitHub para que esto funcione.
+const bgMusic = new Audio('sound/Pausa Y Guardo.mp3'); 
+bgMusic.loop = true; 
+bgMusic.volume = 0.6; 
+
+// Variables del juego
+let currentImage = '';
 let moves = 0;
-let matches = 0;
+let timeRemaining = 30; 
 let timerInterval;
-let timeLeft = 30;
+let correctPieces = 0;
+
+// Referencias HTML
+const bgLayer = document.getElementById('bg-layer');
+const btnPlay = document.getElementById('btn-play');
+const movesDisplay = document.getElementById('moves');
+const timeDisplay = document.getElementById('timer');
+const puzzleBoard = document.getElementById('puzzle-board');
+const piecesContainer = document.getElementById('pieces-container');
+const previewOverlay = document.getElementById('preview-overlay');
 
 // --- FUNCIONES DE NAVEGACIÓN ---
 
-function showScreen(screenId) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(screenId).classList.add('active');
+function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
 }
 
-// Nueva función para iniciar audio en móviles (requiere interacción del usuario)
-function initAudioAndStart() {
-    // Intentamos reproducir y pausar inmediatamente para "desbloquear" el audio en Safari/Chrome Mobile
-    bgMusic.play().then(() => {
-        bgMusic.pause();
-        bgMusic.currentTime = 0;
-    }).catch(error => console.log("Audio waiting for interaction"));
+function setBlur(active) {
+    active ? bgLayer.classList.add('blur-effect') : bgLayer.classList.remove('blur-effect');
+}
+
+window.restartGame = function() {
+    clearAllPieces(); 
+    startGame();
+};
+
+window.exitGame = function() {
+    clearAllPieces();
+    showScreen('canvas-1');
+    setBlur(false);
+    clearInterval(timerInterval);
+    bgMusic.pause();
+    bgMusic.currentTime = 0; 
+};
+
+function clearAllPieces() {
+    const allPieces = document.querySelectorAll('.piece');
+    allPieces.forEach(piece => piece.remove());
+    if(puzzleBoard) puzzleBoard.innerHTML = '';
+    if(piecesContainer) piecesContainer.innerHTML = '';
+}
+
+// --- FLUJO DEL JUEGO ---
+
+btnPlay.addEventListener('click', () => {
+    // Intentar reproducir audio al interactuar
+    bgMusic.play().catch(error => {
+        console.log("Audio esperando interacción: ", error);
+    });
+
+    showScreen('canvas-2');
+    setBlur(true);
     
-    goToScreen2();
-}
-
-function goToScreen2() {
-    showScreen('screen-2');
     setTimeout(() => {
-        goToScreen3();
-    }, 6000);
-}
-
-function goToScreen3() {
-    showScreen('screen-3');
-    
-    // AQUÍ EMPIEZA LA MÚSICA DE FONDO
-    bgMusic.play().catch(e => console.log("Error playing audio: ", e));
-
-    let countdown = 5;
-    const countText = document.getElementById('countdown-text');
-    countText.innerText = countdown;
-
-    const interval = setInterval(() => {
-        countdown--;
-        if (countdown > 0) {
-            countText.innerText = countdown;
-        } else {
-            clearInterval(interval);
-            startGame();
-        }
-    }, 1000);
-}
-
-// --- LÓGICA DEL JUEGO ---
+        startGame();
+    }, 4000);
+});
 
 function startGame() {
-    showScreen('screen-4');
+    showScreen('canvas-3');
     resetGameVariables();
-    createBoard();
+    clearAllPieces(); 
     
-    // Mostrar cartas por 3 segundos
-    const allCards = document.querySelectorAll('.card');
-    allCards.forEach(card => card.classList.add('flipped')); 
-    lockBoard = true;
-
+    const randomIndex = Math.floor(Math.random() * puzzleImages.length);
+    currentImage = puzzleImages[randomIndex];
+    
+    previewOverlay.style.backgroundImage = `url('${currentImage}')`;
+    previewOverlay.style.backgroundSize = '450px 450px';
+    previewOverlay.style.display = 'block';
+    
     setTimeout(() => {
-        allCards.forEach(card => card.classList.remove('flipped')); 
-        lockBoard = false; 
-        startTimer(); 
+        previewOverlay.style.display = 'none';
+        createPuzzle();
+        startTimer();
     }, 3000);
 }
 
 function resetGameVariables() {
-    moves = 0;
-    matches = 0;
-    timeLeft = 30;
-    firstCard = null;
-    secondCard = null;
-    lockBoard = false;
-    document.getElementById('moves').innerText = '0';
-    document.getElementById('time').innerText = '30';
-    clearInterval(timerInterval);
+    moves = 0; timeRemaining = 30; correctPieces = 0;
+    updateStats(); clearInterval(timerInterval);
 }
 
-function createBoard() {
-    const grid = document.getElementById('game-grid');
-    grid.innerHTML = '';
-    
-    // Duplicar array y mezclar
-    let deck = [...cardImages, ...cardImages];
-    deck.sort(() => 0.5 - Math.random());
-
-    deck.forEach(imgSrc => {
-        const cardElement = document.createElement('div');
-        cardElement.classList.add('card');
-        cardElement.dataset.image = imgSrc;
-
-        const frontFace = document.createElement('div');
-        frontFace.classList.add('card-face', 'card-front');
-
-        const backFace = document.createElement('div');
-        backFace.classList.add('card-face', 'card-back');
-        backFace.style.backgroundImage = `url('${imgSrc}')`;
-
-        cardElement.appendChild(frontFace);
-        cardElement.appendChild(backFace);
-        
-        cardElement.addEventListener('click', flipCard);
-        grid.appendChild(cardElement);
-    });
+function updateStats() {
+    movesDisplay.innerText = `Movimientos: ${moves}`;
+    let sec = timeRemaining % 60;
+    timeDisplay.innerText = `Tiempo: 00:${sec < 10 ? '0'+sec : sec}`;
 }
-
-function flipCard() {
-    if (lockBoard) return;
-    if (this === firstCard) return;
-
-    this.classList.add('flipped');
-
-    if (!firstCard) {
-        firstCard = this;
-        return;
-    }
-
-    secondCard = this;
-    moves++;
-    document.getElementById('moves').innerText = moves;
-    checkForMatch();
-}
-
-function checkForMatch() {
-    let isMatch = firstCard.dataset.image === secondCard.dataset.image;
-    
-    if (isMatch) {
-        // SONIDO CORRECTO
-        correctFx.currentTime = 0; // Reinicia el sonido si ya estaba sonando
-        correctFx.play();
-        disableCards();
-    } else {
-        // SONIDO INCORRECTO
-        incorrectFx.currentTime = 0;
-        incorrectFx.play();
-        unflipCards();
-    }
-}
-
-function disableCards() {
-    firstCard.removeEventListener('click', flipCard);
-    secondCard.removeEventListener('click', flipCard);
-    resetBoard();
-    matches++;
-    if (matches === cardImages.length) {
-        gameWon();
-    }
-}
-
-function unflipCards() {
-    lockBoard = true;
-    setTimeout(() => {
-        firstCard.classList.remove('flipped');
-        secondCard.classList.remove('flipped');
-        resetBoard();
-    }, 1000);
-}
-
-function resetBoard() {
-    [firstCard, secondCard, lockBoard] = [null, null, false];
-}
-
-// --- TEMPORIZADOR Y FINALIZACIÓN ---
 
 function startTimer() {
+    clearInterval(timerInterval);
     timerInterval = setInterval(() => {
-        timeLeft--;
-        document.getElementById('time').innerText = timeLeft;
-        if (timeLeft <= 0) {
-            gameLost();
-        }
+        timeRemaining--;
+        updateStats();
+        if (timeRemaining <= 0) gameOver();
     }, 1000);
 }
 
-function gameLost() {
+function gameOver() {
     clearInterval(timerInterval);
-    // PAUSAR MÚSICA DE FONDO AL TERMINAR
-    bgMusic.pause();
-    bgMusic.currentTime = 0;
-    
-    showScreen('screen-5');
+    clearAllPieces(); 
+    showScreen('canvas-4');
 }
 
-function gameWon() {
+function gameWin() {
     clearInterval(timerInterval);
-    // PAUSAR MÚSICA DE FONDO AL GANAR
-    bgMusic.pause();
-    bgMusic.currentTime = 0;
-
     setTimeout(() => {
-        showScreen('screen-6');
+        showScreen('canvas-5');
     }, 500);
 }
 
-// --- REINICIAR Y SALIR ---
+// --- LÓGICA DEL PUZZLE ---
 
-function restartGame(retry) {
-    if (retry) {
-        // Si reinicia, nos aseguramos que la música suene (por si acaso)
-        bgMusic.currentTime = 0;
-        bgMusic.play();
-        startGame(); 
-    } else {
-        exitGame();
+function createPuzzle() {
+    for (let i = 0; i < 9; i++) {
+        const slot = document.createElement('div');
+        slot.classList.add('slot');
+        slot.dataset.index = i;
+        puzzleBoard.appendChild(slot);
     }
+
+    let pieces = [];
+    for (let i = 0; i < 9; i++) {
+        const piece = document.createElement('div');
+        piece.classList.add('piece');
+        piece.style.backgroundImage = `url('${currentImage}')`;
+        piece.style.backgroundSize = '450px 450px';
+        
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        const x = col * -150; 
+        const y = row * -150;
+        piece.style.backgroundPosition = `${x}px ${y}px`;
+        
+        piece.dataset.correctIndex = i;
+        pieces.push(piece);
+    }
+
+    pieces.sort(() => Math.random() - 0.5);
+    
+    pieces.forEach(p => {
+        const randX = Math.random() * 200; 
+        const randY = Math.random() * 30;
+        p.style.left = randX + 'px';
+        p.style.top = randY + 'px';
+        
+        piecesContainer.appendChild(p);
+        makeDraggable(p);
+    });
 }
 
-function exitGame() {
-    clearInterval(timerInterval);
-    // DETENER MÚSICA
-    bgMusic.pause();
-    bgMusic.currentTime = 0;
+// --- ARRASTRE CORREGIDO (Sin saltos) ---
+
+function makeDraggable(el) {
+    const startDrag = (e) => {
+        if (el.classList.contains('snapped')) return;
+        e.preventDefault();
+        
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        const rect = el.getBoundingClientRect();
+        const offsetX = clientX - rect.left;
+        const offsetY = clientY - rect.top;
+        
+        // Mover al body
+        document.body.appendChild(el);
+        el.style.position = 'fixed';
+        el.style.zIndex = 1000;
+        
+        // CORRECCIÓN CLAVE: Fijar la posición INMEDIATAMENTE para que no salte
+        el.style.left = (clientX - offsetX) + 'px';
+        el.style.top = (clientY - offsetY) + 'px';
+        // Mantener tamaño visual exacto
+        el.style.width = rect.width + 'px';
+        el.style.height = rect.height + 'px';
+        
+        const move = (e) => {
+            const cx = e.touches ? e.touches[0].clientX : e.clientX;
+            const cy = e.touches ? e.touches[0].clientY : e.clientY;
+            el.style.left = (cx - offsetX) + 'px';
+            el.style.top = (cy - offsetY) + 'px';
+        };
+        
+        const end = () => {
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', end);
+            document.removeEventListener('touchmove', move);
+            document.removeEventListener('touchend', end);
+            
+            checkMagnet(el);
+        };
+        
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', end);
+        document.addEventListener('touchmove', move, {passive: false});
+        document.addEventListener('touchend', end);
+    };
     
-    showScreen('screen-1');
+    el.addEventListener('mousedown', startDrag);
+    el.addEventListener('touchstart', startDrag, {passive: false});
+}
+
+function checkMagnet(piece) {
+    const correctIndex = piece.dataset.correctIndex;
+    const slot = document.querySelector(`.slot[data-index='${correctIndex}']`);
+    
+    let snapped = false;
+
+    if (slot) {
+        const pRect = piece.getBoundingClientRect();
+        const sRect = slot.getBoundingClientRect();
+        
+        const pCenterX = pRect.left + pRect.width / 2;
+        const pCenterY = pRect.top + pRect.height / 2;
+        const sCenterX = sRect.left + sRect.width / 2;
+        const sCenterY = sRect.top + sRect.height / 2;
+
+        const dist = Math.hypot(pCenterX - sCenterX, pCenterY - sCenterY);
+        
+        if (dist < 60) {
+            slot.appendChild(piece);
+            // Resetear estilos para encajar en el slot
+            piece.style.position = 'absolute';
+            piece.style.left = '0';
+            piece.style.top = '0';
+            piece.style.width = '100%';
+            piece.style.height = '100%';
+            piece.classList.add('snapped');
+            
+            correctPieces++;
+            snapped = true;
+            if (correctPieces === 9) gameWin();
+        }
+    }
+    
+    if (!snapped) {
+        // Regresar a la caja si no encaja
+        piecesContainer.appendChild(piece);
+        piece.style.position = 'absolute';
+        piece.style.width = '150px'; 
+        piece.style.height = '150px';
+        piece.style.zIndex = 100;
+        piece.style.left = Math.random() * 200 + 'px';
+        piece.style.top = Math.random() * 30 + 'px';
+        moves++;
+        updateStats();
+    }
 }
